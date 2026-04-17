@@ -1,6 +1,6 @@
 # Fulbranch
 
-AI-powered development orchestrator: ingest Linear issues, queue work, implement changes via the **GitHub REST API** (no local clone), open draft pull requests, and run LLM review loops with a configurable cap on concurrent work.
+AI-powered development orchestrator: ingest Linear issues, queue work, implement changes via the **GitHub REST API** (no local clone), open draft pull requests, and run LLM review loops with a configurable cap on concurrent work. On each **push** to a branch that matches a tracked task, a signed `POST /webhook/github` handler can run a Claude review and post feedback on the pull request.
 
 ## License
 
@@ -24,6 +24,7 @@ cp .env.example .env
 | `GITHUB_TOKEN` | Fine-grained or classic PAT with repo contents and pull requests |
 | `GITHUB_OWNER` | User or organization that owns the target repository |
 | `GITHUB_REPO` | Repository name |
+| `GITHUB_WEBHOOK_SECRET` | Secret for `X-Hub-Signature-256` on `POST /webhook/github` (create a GitHub repo webhook; use the same secret) |
 | `LINEAR_WEBHOOK_SECRET` | Signing secret from your Linear webhook settings |
 | `LINEAR_READY_STATE_ID` | Linear workflow state id that means “ready to implement” |
 | `LINEAR_API_KEY` | Optional today; reserved for future Linear API use |
@@ -31,6 +32,7 @@ cp .env.example .env
 | `ANTHROPIC_API_KEY` | Used for code review |
 | `DATABASE_URL` | SQLite database path (see below) |
 | `MAX_OPEN_PRS` | Max tasks in `in_progress` or `review` (default `3`) |
+| `MAX_REVIEW_RETRIES` | After this many “needs work” outcomes, the task is marked `blocked` (default `2`) |
 | `PORT` | HTTP port for the webhook server (default `3000`) |
 
 Optional:
@@ -39,6 +41,16 @@ Optional:
 - `GITHUB_CONTEXT_PATHS` — comma-separated paths (files or directories) passed as codebase context to the implementer; directories are read recursively up to 200 files (default `README.md`)
 
 See [.env.example](.env.example) for the full list.
+
+## Webhooks
+
+| Endpoint | Purpose |
+| -------- | ------- |
+| `GET /health` | Liveness; includes a small `openTasks` count |
+| `POST /webhook/linear` | Linear issues: HMAC on raw body (`Linear-Signature`), enqueues work when an issue hits the “ready to implement” state |
+| `POST /webhook/github` | GitHub **push** events only (`X-GitHub-Event: push`): validates `X-Hub-Signature-256` with `GITHUB_WEBHOOK_SECRET`, resolves the branch from `ref`, loads the task by `branch_name`, and if the task is not `done` or `blocked`, runs the same reviewer as the orchestrator (diff → Claude → structured PR comment). Unknown branches are ignored silently. |
+
+Configure a **repository webhook** on the target repo: content type JSON, **Push** events only, payload URL pointing at your deployed Fulbranch URL with path `/webhook/github`, and the same secret as `GITHUB_WEBHOOK_SECRET`.
 
 ## Database
 
@@ -64,7 +76,7 @@ npm run build
 npm start
 ```
 
-Expose `POST /webhook/linear` to the internet (for example via a tunnel) so Linear can deliver webhooks. Use `GET /health` for a simple health check.
+Expose `POST /webhook/linear` and (for push-triggered PR reviews) `POST /webhook/github` to the internet—for example via a tunnel such as ngrok—so Linear and GitHub can reach your server. Use `GET /health` for a simple health check.
 
 ## Contributing
 
