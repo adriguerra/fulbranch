@@ -14,17 +14,17 @@ import { taskLog } from "../logger.js";
 const INTERVAL_MS = 10_000;
 
 /** Prevents concurrent ticks when a run exceeds INTERVAL_MS (setInterval does not await). */
-let tickRunning = false;
+let isRunning = false;
 
 export function startOrchestrator(): NodeJS.Timeout {
   const tick = async (): Promise<void> => {
-    if (tickRunning) {
+    if (isRunning) {
       console.warn(
         "[orchestrator] tick skipped: previous tick still in progress"
       );
       return;
     }
-    tickRunning = true;
+    isRunning = true;
     try {
       const retryTasks = getTasksAwaitingRetryImplementation();
       for (const task of retryTasks) {
@@ -60,7 +60,7 @@ export function startOrchestrator(): NodeJS.Timeout {
     } catch (err) {
       console.error("[orchestrator] tick failed:", err);
     } finally {
-      tickRunning = false;
+      isRunning = false;
     }
   };
 

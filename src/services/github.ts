@@ -13,6 +13,15 @@ function repoParams() {
   };
 }
 
+/** Caps recursive directory reads so LLM context stays bounded. */
+const MAX_CONTEXT_FILES = 200;
+
+type ContentItem = {
+  type: string;
+  path: string;
+  size?: number;
+};
+
 export async function createBranch(branchName: string): Promise<void> {
   const api = octokit();
   const { owner, repo } = repoParams();
@@ -31,12 +40,85 @@ export async function createBranch(branchName: string): Promise<void> {
   });
 }
 
+function pushDecodedFile(
+  path: string,
+  base64Content: string,
+  out: FileContent[]
+): void {
+  if (out.length >= MAX_CONTEXT_FILES) {
+    return;
+  }
+  const content = Buffer.from(base64Content, "base64").toString("utf-8");
+  out.push({ path, content });
+}
+
+async function walkDirectory(
+  api: ReturnType<typeof octokit>,
+  owner: string,
+  repo: string,
+  ref: string,
+  dirPath: string,
+  out: FileContent[]
+): Promise<void> {
+  if (out.length >= MAX_CONTEXT_FILES) {
+    return;
+  }
+  let data: unknown;
+  try {
+    const res = await api.rest.repos.getContent({
+      owner,
+      repo,
+      path: dirPath,
+      ref,
+    });
+    data = res.data;
+  } catch (e: unknown) {
+    const err = e as { status?: number };
+    if (err.status === 404) {
+      out.push({ path: dirPath, content: "" });
+      return;
+    }
+    throw e;
+  }
+  if (!Array.isArray(data)) {
+    return;
+  }
+  const entries = [...(data as ContentItem[])].sort((a, b) =>
+    a.path.localeCompare(b.path)
+  );
+  for (const entry of entries) {
+    if (out.length >= MAX_CONTEXT_FILES) {
+      break;
+    }
+    if (entry.type === "file") {
+      const { data: fileData } = await api.rest.repos.getContent({
+        owner,
+        repo,
+        path: entry.path,
+        ref,
+      });
+      if (!("content" in fileData) || Array.isArray(fileData)) {
+        continue;
+      }
+      pushDecodedFile(entry.path, fileData.content, out);
+    } else if (entry.type === "dir") {
+      await walkDirectory(api, owner, repo, ref, entry.path, out);
+    }
+  }
+}
+
 export async function getFileContents(paths: string[]): Promise<FileContent[]> {
   const api = octokit();
   const { owner, repo } = repoParams();
   const ref = config.github.defaultBranch;
   const out: FileContent[] = [];
+  let truncated = false;
+
   for (const path of paths) {
+    if (out.length >= MAX_CONTEXT_FILES) {
+      truncated = true;
+      break;
+    }
     try {
       const { data } = await api.rest.repos.getContent({
         owner,
@@ -44,11 +126,17 @@ export async function getFileContents(paths: string[]): Promise<FileContent[]> {
         path,
         ref,
       });
-      if (!("content" in data) || Array.isArray(data)) {
+      if (Array.isArray(data)) {
+        await walkDirectory(api, owner, repo, ref, path, out);
+        if (out.length >= MAX_CONTEXT_FILES) {
+          truncated = true;
+        }
         continue;
       }
-      const content = Buffer.from(data.content, "base64").toString("utf-8");
-      out.push({ path, content });
+      if (!("content" in data)) {
+        continue;
+      }
+      pushDecodedFile(path, data.content, out);
     } catch (e: unknown) {
       const err = e as { status?: number };
       if (err.status === 404) {
@@ -57,6 +145,12 @@ export async function getFileContents(paths: string[]): Promise<FileContent[]> {
       }
       throw e;
     }
+  }
+
+  if (truncated) {
+    console.warn(
+      `[github] context truncated: exceeded ${MAX_CONTEXT_FILES} files (GITHUB_CONTEXT_PATHS)`
+    );
   }
   return out;
 }

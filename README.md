@@ -36,7 +36,7 @@ cp .env.example .env
 Optional:
 
 - `GITHUB_DEFAULT_BRANCH` — base branch for PRs (default `main`)
-- `GITHUB_CONTEXT_PATHS` — comma-separated file paths in the repo to pass as codebase context to the implementer (default `README.md`)
+- `GITHUB_CONTEXT_PATHS` — comma-separated paths (files or directories) passed as codebase context to the implementer; directories are read recursively up to 200 files (default `README.md`)
 
 See [.env.example](.env.example) for the full list.
 
