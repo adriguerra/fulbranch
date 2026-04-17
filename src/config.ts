@@ -11,11 +11,13 @@ function requireEnv(name: string): string {
 export const config = {
   port: Number(process.env.PORT ?? 3000),
   maxOpenPrs: Number(process.env.MAX_OPEN_PRS ?? 3),
+  maxReviewRetries: Number(process.env.MAX_REVIEW_RETRIES ?? 2),
   github: {
     token: () => requireEnv("GITHUB_TOKEN"),
     owner: () => requireEnv("GITHUB_OWNER"),
     repo: () => requireEnv("GITHUB_REPO"),
     defaultBranch: process.env.GITHUB_DEFAULT_BRANCH ?? "main",
+    webhookSecret: () => requireEnv("GITHUB_WEBHOOK_SECRET"),
   },
   linear: {
     webhookSecret: () => requireEnv("LINEAR_WEBHOOK_SECRET"),

@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { Octokit } from "@octokit/rest";
 import type { FileChange, FileContent } from "../types.js";
 import { config } from "../config.js";
@@ -11,6 +12,38 @@ function repoParams() {
     owner: config.github.owner(),
     repo: config.github.repo(),
   };
+}
+
+/**
+ * Verify GitHub X-Hub-Signature-256: sha256=<hex> HMAC of raw body (see GitHub webhook docs).
+ */
+export function verifyGitHubWebhookSignature(
+  rawBody: Buffer,
+  headerSignature: string | undefined
+): boolean {
+  const secret = config.github.webhookSecret();
+  if (!headerSignature || typeof headerSignature !== "string") {
+    return false;
+  }
+  const prefix = "sha256=";
+  if (!headerSignature.startsWith(prefix)) {
+    return false;
+  }
+  const receivedHex = headerSignature.slice(prefix.length);
+  let receivedBuf: Buffer;
+  try {
+    receivedBuf = Buffer.from(receivedHex, "hex");
+  } catch {
+    return false;
+  }
+  const expected = crypto
+    .createHmac("sha256", secret)
+    .update(rawBody)
+    .digest();
+  if (receivedBuf.length !== expected.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(receivedBuf, expected);
 }
 
 /** Caps recursive directory reads so LLM context stays bounded. */
@@ -246,5 +279,19 @@ export async function markPRReady(prNumber: number): Promise<void> {
     repo,
     pull_number: prNumber,
     draft: false,
+  });
+}
+
+export async function postPRComment(
+  prNumber: number,
+  body: string
+): Promise<void> {
+  const api = octokit();
+  const { owner, repo } = repoParams();
+  await api.rest.issues.createComment({
+    owner,
+    repo,
+    issue_number: prNumber,
+    body,
   });
 }

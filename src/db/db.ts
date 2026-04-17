@@ -84,6 +84,13 @@ export function getTaskById(id: string): Task | null {
   return row ? rowToTask(row) : null;
 }
 
+export function getTaskByBranchName(branchName: string): Task | null {
+  const row = db
+    .prepare("SELECT * FROM tasks WHERE branch_name = ?")
+    .get(branchName) as Record<string, unknown> | undefined;
+  return row ? rowToTask(row) : null;
+}
+
 export type TaskUpdate = Partial<
   Pick<
     Task,
