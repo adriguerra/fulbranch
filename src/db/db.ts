@@ -38,6 +38,27 @@ const schemaPath = path.join(__dirname, "schema.sql");
 const schema = fs.readFileSync(schemaPath, "utf-8");
 db.exec(schema);
 
+migrateTasksTable(db);
+
+function migrateTasksTable(
+  database: InstanceType<typeof Database>
+): void {
+  const cols = database
+    .prepare("PRAGMA table_info(tasks)")
+    .all() as { name: string }[];
+  const names = new Set(cols.map((c) => c.name));
+
+  const addColumn = (name: string, ddl: string) => {
+    if (!names.has(name)) {
+      database.exec(`ALTER TABLE tasks ADD COLUMN ${ddl}`);
+    }
+  };
+
+  addColumn("latest_review_json", "latest_review_json TEXT");
+  addColumn("review_issue_hashes", "review_issue_hashes TEXT");
+  addColumn("repeat_count", "repeat_count INTEGER NOT NULL DEFAULT 0");
+}
+
 function rowToTask(row: Record<string, unknown>): Task {
   return {
     id: String(row.id),
@@ -51,6 +72,11 @@ function rowToTask(row: Record<string, unknown>): Task {
     retries: Number(row.retries ?? 0),
     review_feedback:
       row.review_feedback == null ? null : String(row.review_feedback),
+    latest_review_json:
+      row.latest_review_json == null ? null : String(row.latest_review_json),
+    review_issue_hashes:
+      row.review_issue_hashes == null ? null : String(row.review_issue_hashes),
+    repeat_count: Number(row.repeat_count ?? 0),
     created_at: new Date(String(row.created_at)),
     updated_at: new Date(String(row.updated_at)),
   };
@@ -124,6 +150,9 @@ export type TaskUpdate = Partial<
     | "pr_number"
     | "retries"
     | "review_feedback"
+    | "latest_review_json"
+    | "review_issue_hashes"
+    | "repeat_count"
   >
 >;
 
@@ -147,6 +176,9 @@ export function updateTask(id: string, patch: TaskUpdate): void {
       pr_number = @pr_number,
       retries = @retries,
       review_feedback = @review_feedback,
+      latest_review_json = @latest_review_json,
+      review_issue_hashes = @review_issue_hashes,
+      repeat_count = @repeat_count,
       updated_at = @updated_at
     WHERE id = @id`
   ).run({
@@ -159,6 +191,9 @@ export function updateTask(id: string, patch: TaskUpdate): void {
     pr_number: next.pr_number,
     retries: next.retries,
     review_feedback: next.review_feedback,
+    latest_review_json: next.latest_review_json,
+    review_issue_hashes: next.review_issue_hashes,
+    repeat_count: next.repeat_count,
     updated_at: next.updated_at.toISOString(),
   });
 }
@@ -177,10 +212,15 @@ export function getTasksAwaitingRetryImplementation(): Task[] {
   const rows = db
     .prepare(
       `SELECT * FROM tasks
-       WHERE status = 'in_progress'
-         AND review_feedback IS NOT NULL
-         AND trim(review_feedback) != ''
-         AND pr_number IS NOT NULL
+       WHERE pr_number IS NOT NULL
+         AND (
+           status = 'fixing'
+           OR (
+             status = 'in_progress'
+             AND review_feedback IS NOT NULL
+             AND trim(review_feedback) != ''
+           )
+         )
        ORDER BY datetime(updated_at) ASC`
     )
     .all() as Record<string, unknown>[];
@@ -199,7 +239,7 @@ export function getTasksInReview(): Task[] {
 export function countOpenPRs(): number {
   const row = db
     .prepare(
-      `SELECT COUNT(*) as c FROM tasks WHERE status IN ('in_progress', 'review')`
+      `SELECT COUNT(*) as c FROM tasks WHERE status IN ('in_progress', 'fixing', 'review')`
     )
     .get() as { c: number };
   return Number(row.c);

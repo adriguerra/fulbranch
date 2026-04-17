@@ -48,7 +48,7 @@ See [.env.example](.env.example) for the full list.
 | -------- | ------- |
 | `GET /health` | Liveness; includes a small `openTasks` count |
 | `POST /webhook/linear` | Linear issues: HMAC on raw body (`Linear-Signature`), enqueues work when an issue hits the “ready to implement” state |
-| `POST /webhook/github` | Validates `X-Hub-Signature-256` with `GITHUB_WEBHOOK_SECRET`. Handles: **`push`** — branch → task by `branch_name`, runs Claude PR review (unless `done`/`blocked`). **`pull_request_review`** (`action: submitted`) — resolves task by PR number / head branch, runs the **implementer** if status is `in_progress` or `review`. **`issue_comment`** (`action: created`, PR only) — same implementer trigger for new thread comments. Ignores untracked branches/PRs. |
+| `POST /webhook/github` | Validates `X-Hub-Signature-256` with `GITHUB_WEBHOOK_SECRET`. Handles: **`push`** — branch → task by `branch_name`, runs Claude PR review (unless `done`/`blocked`). **`pull_request_review`** (`action: submitted`) — resolves task by PR number / head branch, runs the **implementer** if status is `in_progress`, **`fixing`**, or `review`. **`issue_comment`** (`action: created`, PR only) — same implementer trigger for new thread comments. Ignores untracked branches/PRs. |
 
 Configure a **repository webhook** on the target repo: content type JSON, payload URL `…/webhook/github`, secret `GITHUB_WEBHOOK_SECRET`, and enable at least **Push**, **Pull request reviews**, and **Issue comments** (same endpoint handles all three).
 
@@ -56,8 +56,10 @@ Configure a **repository webhook** on the target repo: content type JSON, payloa
 
 The app uses **SQLite** by default. If `DATABASE_URL` is unset, the database file is created at `./fulbranch.db` in the current working directory.
 
-- The schema lives in [`src/db/schema.sql`](src/db/schema.sql); tables are created on startup.
+- The schema lives in [`src/db/schema.sql`](src/db/schema.sql); tables are created on startup. Existing databases get new columns via lightweight **migrations** on startup (`latest_review_json`, `review_issue_hashes`, `repeat_count`).
 - **Do not commit** `.env`, `*.db`, or `*.db-journal` files. They are listed in `.gitignore` and may contain secrets or private issue data.
+
+**Task lifecycle (high level):** `pending` → `in_progress` (first implementation) → `review` → on failed review → **`fixing`** (address structured issues + optional GitHub thread) → `review` → … → `done` or **`blocked`** (max retries, or **repeat detection**: same issue fingerprint twice). The reviewer stores canonical JSON in `latest_review_json` (pass/needs_work, summary, typed issues with file + instruction). The implementer uses that JSON as the primary fix list when present; legacy `review_feedback` text and unstructured GitHub aggregation remain as fallback when no structured review exists.
 
 PostgreSQL can be supported later by swapping the database layer; the schema is intentionally simple.
 

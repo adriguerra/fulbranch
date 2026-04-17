@@ -3,6 +3,7 @@ import { mergeReviewFeedbackForImplementer } from "./feedback.js";
 import { generateImplementation } from "../services/llm.js";
 import { getTaskById, updateTask } from "../db/db.js";
 import type { Task } from "../types.js";
+import { parseLatestReviewJson } from "../review/structured.js";
 import { config } from "../config.js";
 import { taskLog } from "../logger.js";
 
@@ -38,74 +39,96 @@ export async function runImplementer(task: Task): Promise<void> {
 }
 
 async function runImplementerLocked(task: Task): Promise<void> {
+  const base = getTaskById(task.id) ?? task;
   const paths = config.contextPaths();
-  let branch = task.branch_name;
+  let branch = base.branch_name;
 
   if (!branch) {
-    branch = branchNameForNewTask(task);
-    taskLog(task.id, `creating branch: ${branch}`);
+    branch = branchNameForNewTask(base);
+    taskLog(base.id, `creating branch: ${branch}`);
     await github.createBranch(branch);
-    updateTask(task.id, { branch_name: branch });
-    taskLog(task.id, `branch created: ${branch}`);
+    updateTask(base.id, { branch_name: branch });
+    taskLog(base.id, `branch created: ${branch}`);
   } else {
-    taskLog(task.id, `using existing branch: ${branch}`);
+    taskLog(base.id, `using existing branch: ${branch}`);
   }
 
   const fileContents = await github.getFileContents(paths);
-  taskLog(task.id, `fetched ${fileContents.length} context file(s) for LLM`);
+  taskLog(base.id, `fetched ${fileContents.length} context file(s) for LLM`);
 
   let githubDiscussion = "";
-  if (task.pr_number != null) {
-    taskLog(task.id, `fetching GitHub PR #${task.pr_number} review thread for context`);
-    githubDiscussion = await github.fetchAggregatedReviewFeedback(task.pr_number);
+  if (base.pr_number != null) {
+    taskLog(
+      base.id,
+      `fetching GitHub PR #${base.pr_number} review thread for context`
+    );
+    githubDiscussion = await github.fetchAggregatedReviewFeedback(
+      base.pr_number
+    );
     if (githubDiscussion) {
       taskLog(
-        task.id,
-        `GitHub discussion: ${githubDiscussion.length} chars for implementer prompt`
+        base.id,
+        `GitHub discussion: ${githubDiscussion.length} chars`
       );
     }
   }
 
-  const fresh = getTaskById(task.id);
-  const reviewFromDb = fresh?.review_feedback ?? task.review_feedback;
-  const mergedFeedback = mergeReviewFeedbackForImplementer(
-    reviewFromDb,
-    githubDiscussion
-  );
+  const stored = parseLatestReviewJson(base.latest_review_json);
+  const structuredActive =
+    stored?.status === "needs_work" && stored.issues.length > 0;
 
-  const changes = await generateImplementation(
-    {
-      ...task,
-      branch_name: branch,
-      review_feedback: mergedFeedback,
-    },
-    fileContents
-  );
+  let changes;
+  if (structuredActive) {
+    taskLog(
+      base.id,
+      "implementer: structured review issues (primary); GitHub thread supplementary"
+    );
+    changes = await generateImplementation(
+      { ...base, branch_name: branch },
+      fileContents,
+      githubDiscussion.trim()
+        ? { githubSupplement: githubDiscussion }
+        : undefined
+    );
+  } else {
+    const mergedFeedback = mergeReviewFeedbackForImplementer(
+      base.review_feedback,
+      githubDiscussion
+    );
+    changes = await generateImplementation(
+      {
+        ...base,
+        branch_name: branch,
+        review_feedback: mergedFeedback,
+      },
+      fileContents
+    );
+  }
 
-  const message = `feat: ${task.title} [ful-${task.id}]`;
+  const message = `feat: ${base.title} [ful-${base.id}]`;
   await github.applyFileChanges(branch, changes, message);
 
-  let prUrl = task.pr_url;
-  let prNumber = task.pr_number;
+  let prUrl = base.pr_url;
+  let prNumber = base.pr_number;
 
-  if (task.pr_number == null) {
-    const title = `${task.title} [ful-${task.id}]`;
-    const body = `Automated PR for Linear issue \`${task.id}\`.\n\n${task.description || ""}`;
-    taskLog(task.id, "opening draft PR");
+  if (base.pr_number == null) {
+    const title = `${base.title} [ful-${base.id}]`;
+    const body = `Automated PR for Linear issue \`${base.id}\`.\n\n${base.description || ""}`;
+    taskLog(base.id, "opening draft PR");
     const pr = await github.createDraftPR(branch, title, body);
     prUrl = pr.url;
     prNumber = pr.number;
-    taskLog(task.id, `PR opened: ${prUrl}`);
+    taskLog(base.id, `PR opened: ${prUrl}`);
   } else {
-    taskLog(task.id, `commits pushed to existing PR #${task.pr_number}`);
+    taskLog(base.id, `commits pushed to existing PR #${base.pr_number}`);
   }
 
-  updateTask(task.id, {
+  updateTask(base.id, {
     status: "review",
     branch_name: branch,
     pr_url: prUrl,
     pr_number: prNumber,
     review_feedback: null,
   });
-  taskLog(task.id, "in_progress → review");
+  taskLog(base.id, "implementer → review");
 }

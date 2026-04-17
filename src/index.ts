@@ -64,8 +64,12 @@ app.post("/webhook/linear", (req: RequestWithRawBody, res) => {
 
 function taskEligibleForImplementer(
   status: string
-): status is "in_progress" | "review" {
-  return status === "in_progress" || status === "review";
+): status is "in_progress" | "fixing" | "review" {
+  return (
+    status === "in_progress" ||
+    status === "fixing" ||
+    status === "review"
+  );
 }
 
 app.post("/webhook/github", (req: RequestWithRawBody, res) => {
@@ -155,7 +159,7 @@ app.post("/webhook/github", (req: RequestWithRawBody, res) => {
     }
 
     taskLog(task.id, "PR review submitted → implementer triggered");
-    updateTask(task.id, { status: "in_progress" });
+    updateTask(task.id, { status: "fixing" });
     void runImplementer(task).catch((err) => {
       console.error(`[webhook/github] implementer failed for ${task.id}:`, err);
       handleAgentError(task, err);
@@ -194,7 +198,7 @@ app.post("/webhook/github", (req: RequestWithRawBody, res) => {
     }
 
     taskLog(task.id, "PR thread comment → implementer triggered");
-    updateTask(task.id, { status: "in_progress" });
+    updateTask(task.id, { status: "fixing" });
     void runImplementer(task).catch((err) => {
       console.error(`[webhook/github] implementer failed for ${task.id}:`, err);
       handleAgentError(task, err);
