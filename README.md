@@ -1,6 +1,6 @@
 # Fulbranch
 
-AI-powered development orchestrator: ingest Linear issues, queue work, implement changes via the **GitHub REST API** (no local clone), open draft pull requests, and run LLM review loops with a configurable cap on concurrent work. On each **push** to a branch that matches a tracked task, a signed `POST /webhook/github` handler can run a Claude review and post feedback on the pull request.
+AI-powered development orchestrator: ingest Linear issues, queue work, implement changes via the **GitHub REST API** (no local clone), open draft pull requests, and run LLM review loops with a configurable cap on concurrent work. On **push**, Fulbranch can run an automated Claude review on the PR; on **submitted PR reviews** or **new PR thread comments**, it can pull human/bot feedback from GitHub and re-run the implementer against that thread so fixes are driven from real review discussion (for tasks stored in Fulbranch’s DB).
 
 ## License
 
@@ -48,9 +48,9 @@ See [.env.example](.env.example) for the full list.
 | -------- | ------- |
 | `GET /health` | Liveness; includes a small `openTasks` count |
 | `POST /webhook/linear` | Linear issues: HMAC on raw body (`Linear-Signature`), enqueues work when an issue hits the “ready to implement” state |
-| `POST /webhook/github` | GitHub **push** events only (`X-GitHub-Event: push`): validates `X-Hub-Signature-256` with `GITHUB_WEBHOOK_SECRET`, resolves the branch from `ref`, loads the task by `branch_name`, and if the task is not `done` or `blocked`, runs the same reviewer as the orchestrator (diff → Claude → structured PR comment). Unknown branches are ignored silently. |
+| `POST /webhook/github` | Validates `X-Hub-Signature-256` with `GITHUB_WEBHOOK_SECRET`. Handles: **`push`** — branch → task by `branch_name`, runs Claude PR review (unless `done`/`blocked`). **`pull_request_review`** (`action: submitted`) — resolves task by PR number / head branch, runs the **implementer** if status is `in_progress` or `review`. **`issue_comment`** (`action: created`, PR only) — same implementer trigger for new thread comments. Ignores untracked branches/PRs. |
 
-Configure a **repository webhook** on the target repo: content type JSON, **Push** events only, payload URL pointing at your deployed Fulbranch URL with path `/webhook/github`, and the same secret as `GITHUB_WEBHOOK_SECRET`.
+Configure a **repository webhook** on the target repo: content type JSON, payload URL `…/webhook/github`, secret `GITHUB_WEBHOOK_SECRET`, and enable at least **Push**, **Pull request reviews**, and **Issue comments** (same endpoint handles all three).
 
 ## Database
 

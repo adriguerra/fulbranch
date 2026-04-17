@@ -91,6 +91,28 @@ export function getTaskByBranchName(branchName: string): Task | null {
   return row ? rowToTask(row) : null;
 }
 
+export function getTaskByPrNumber(prNumber: number): Task | null {
+  const row = db
+    .prepare("SELECT * FROM tasks WHERE pr_number = ?")
+    .get(prNumber) as Record<string, unknown> | undefined;
+  return row ? rowToTask(row) : null;
+}
+
+/** Prefer DB row with matching PR number, else branch on head ref. */
+export function findTaskForPullRequest(
+  prNumber: number,
+  headBranchName: string | null | undefined
+): Task | null {
+  const byPr = getTaskByPrNumber(prNumber);
+  if (byPr) {
+    return byPr;
+  }
+  if (headBranchName) {
+    return getTaskByBranchName(headBranchName);
+  }
+  return null;
+}
+
 export type TaskUpdate = Partial<
   Pick<
     Task,

@@ -295,3 +295,79 @@ export async function postPRComment(
     body,
   });
 }
+
+const MAX_GITHUB_FEEDBACK_CHARS = 120_000;
+
+/**
+ * Pulls submitted PR reviews, inline review comments, and issue-thread comments for the LLM.
+ * Large threads are truncated to stay within context limits.
+ */
+export async function fetchAggregatedReviewFeedback(
+  prNumber: number
+): Promise<string> {
+  const api = octokit();
+  const { owner, repo } = repoParams();
+
+  const sections: string[] = [];
+
+  const reviews = await api.paginate(api.rest.pulls.listReviews, {
+    owner,
+    repo,
+    pull_number: prNumber,
+    per_page: 100,
+  });
+
+  for (const r of reviews) {
+    const body = typeof r.body === "string" ? r.body.trim() : "";
+    if (!body) {
+      continue;
+    }
+    const user = r.user?.login ?? "unknown";
+    const state = r.state ?? "";
+    sections.push(`[Submitted review — @${user} — ${state}]\n${body}`);
+  }
+
+  const reviewComments = await api.paginate(
+    api.rest.pulls.listReviewComments,
+    {
+      owner,
+      repo,
+      pull_number: prNumber,
+      per_page: 100,
+    }
+  );
+
+  for (const c of reviewComments) {
+    const body = typeof c.body === "string" ? c.body.trim() : "";
+    if (!body) {
+      continue;
+    }
+    const path = c.path ?? "?";
+    const user = c.user?.login ?? "unknown";
+    sections.push(`[Inline comment — ${path} — @${user}]\n${body}`);
+  }
+
+  const issueComments = await api.paginate(api.rest.issues.listComments, {
+    owner,
+    repo,
+    issue_number: prNumber,
+    per_page: 100,
+  });
+
+  for (const c of issueComments) {
+    const body = typeof c.body === "string" ? c.body.trim() : "";
+    if (!body) {
+      continue;
+    }
+    const user = c.user?.login ?? "unknown";
+    sections.push(`[Issue / PR thread comment — @${user}]\n${body}`);
+  }
+
+  let text = sections.join("\n\n");
+  if (text.length > MAX_GITHUB_FEEDBACK_CHARS) {
+    text =
+      text.slice(0, MAX_GITHUB_FEEDBACK_CHARS) +
+      "\n\n…(truncated: PR discussion exceeded max length)";
+  }
+  return text;
+}

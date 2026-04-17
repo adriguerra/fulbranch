@@ -1,9 +1,13 @@
 import * as github from "../services/github.js";
+import { mergeReviewFeedbackForImplementer } from "./feedback.js";
 import { generateImplementation } from "../services/llm.js";
-import { updateTask } from "../db/db.js";
+import { getTaskById, updateTask } from "../db/db.js";
 import type { Task } from "../types.js";
 import { config } from "../config.js";
 import { taskLog } from "../logger.js";
+
+/** Prevents overlapping implementer runs (webhooks + orchestrator). */
+const implementerLocks = new Set<string>();
 
 function slugify(title: string): string {
   return title
@@ -20,6 +24,20 @@ function branchNameForNewTask(task: Task): string {
 }
 
 export async function runImplementer(task: Task): Promise<void> {
+  if (implementerLocks.has(task.id)) {
+    taskLog(task.id, "implementer skipped: already in progress");
+    return;
+  }
+
+  implementerLocks.add(task.id);
+  try {
+    await runImplementerLocked(task);
+  } finally {
+    implementerLocks.delete(task.id);
+  }
+}
+
+async function runImplementerLocked(task: Task): Promise<void> {
   const paths = config.contextPaths();
   let branch = task.branch_name;
 
@@ -36,8 +54,31 @@ export async function runImplementer(task: Task): Promise<void> {
   const fileContents = await github.getFileContents(paths);
   taskLog(task.id, `fetched ${fileContents.length} context file(s) for LLM`);
 
+  let githubDiscussion = "";
+  if (task.pr_number != null) {
+    taskLog(task.id, `fetching GitHub PR #${task.pr_number} review thread for context`);
+    githubDiscussion = await github.fetchAggregatedReviewFeedback(task.pr_number);
+    if (githubDiscussion) {
+      taskLog(
+        task.id,
+        `GitHub discussion: ${githubDiscussion.length} chars for implementer prompt`
+      );
+    }
+  }
+
+  const fresh = getTaskById(task.id);
+  const reviewFromDb = fresh?.review_feedback ?? task.review_feedback;
+  const mergedFeedback = mergeReviewFeedbackForImplementer(
+    reviewFromDb,
+    githubDiscussion
+  );
+
   const changes = await generateImplementation(
-    { ...task, branch_name: branch },
+    {
+      ...task,
+      branch_name: branch,
+      review_feedback: mergedFeedback,
+    },
     fileContents
   );
 

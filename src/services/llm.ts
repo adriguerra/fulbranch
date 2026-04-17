@@ -83,9 +83,10 @@ export async function generateImplementation(
     .map((f) => `--- ${f.path} ---\n${f.content}`)
     .join("\n\n");
 
+  const rf = task.review_feedback?.trim() ?? "";
   const feedbackBlock =
-    task.retries > 0 && task.review_feedback
-      ? `\n\nPrevious review feedback (address this):\n${task.review_feedback}\n`
+    rf !== ""
+      ? `\n\nReview feedback (address all of this — Fulbranch stored review and/or GitHub discussion):\n${rf}\n`
       : "";
 
   const system = `You are an expert software engineer. Respond with ONLY a valid JSON array of objects with keys "path" and "content" (full file contents). No markdown fences, no commentary.`;
