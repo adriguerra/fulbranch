@@ -84,23 +84,49 @@ export async function generateImplementation(
     .join("\n\n");
 
   const rf = task.review_feedback?.trim() ?? "";
-  const feedbackBlock =
-    rf !== ""
-      ? `\n\nReview feedback (address all of this — Fulbranch stored review and/or GitHub discussion):\n${rf}\n`
-      : "";
+  const fixingMode = rf !== "";
 
-  const system = `You are an expert software engineer. Respond with ONLY a valid JSON array of objects with keys "path" and "content" (full file contents). No markdown fences, no commentary.`;
+  const feedbackBlock = fixingMode
+    ? `\n\nReview feedback to address (Fulbranch automated review and/or GitHub discussion — treat every point as something to fix or satisfy):\n${rf}\n`
+    : "";
 
-  const prompt = `Task ID: ${task.id}
+  const systemImplement = `You are an expert software engineer. Respond with ONLY a valid JSON array of objects with keys "path" and "content" (full file contents). No markdown fences, no commentary.`;
+
+  const systemFix = `You are fixing an existing pull request to satisfy review feedback. Respond with ONLY a valid JSON array of objects with keys "path" and "content" (full file contents for each changed file only). No markdown fences, no commentary.
+
+Rules:
+- This is a FIXING pass, not greenfield implementation. Address the review feedback only.
+- Mentally extract each concrete issue from the feedback; fix those items. Do not skip review items.
+- Make the smallest reasonable change: prefer editing existing code over rewriting files.
+- Do NOT refactor unrelated code, add features, change architecture, rename APIs, or "improve" code outside the requested fixes.
+- Include in the JSON array ONLY files you actually modified. Do not output unchanged files.
+- Preserve the PR's original intent.
+
+If feedback is ambiguous, make the safest minimal fix that addresses the stated concern.`;
+
+  const promptImplement = `Task ID: ${task.id}
 Title: ${task.title}
 Description:
+${task.description}
+
+Repository files for context:
+${context}
+
+Implement the task by outputting the complete files to create or replace. JSON array format: [{"path":"relative/path.ts","content":"..."}]`;
+
+  const promptFix = `Task ID: ${task.id}
+Original title: ${task.title}
+Original description (context only — do not expand scope beyond it):
 ${task.description}
 ${feedbackBlock}
 
 Repository files for context:
 ${context}
 
-Implement the task by outputting the complete files to create or replace. JSON array format: [{"path":"relative/path.ts","content":"..."}]`;
+Apply ONLY the fixes required by the review feedback above. Output JSON array with one entry per modified file only (full file contents): [{"path":"relative/path.ts","content":"..."}]`;
+
+  const system = fixingMode ? systemFix : systemImplement;
+  const prompt = fixingMode ? promptFix : promptImplement;
 
   const raw = await callLLM({
     provider: "openai",
