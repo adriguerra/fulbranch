@@ -50,7 +50,7 @@ function formatReviewComment(
       "\n\n_Max automated review retries reached — task marked **blocked**._";
   }
 
-  return `## Fulbranch Review
+  return `## Mainark Review
 
 ${verdictLine}
 
@@ -60,7 +60,7 @@ ${issuesBody}
 ### Summary
 ${result.summary}${extra}
 ---
-*Fulbranch automated review — push a fix to re-trigger*`;
+*Mainark automated review — push a fix to re-trigger*`;
 }
 
 export async function runReviewer(task: Task): Promise<void> {

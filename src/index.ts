@@ -8,6 +8,7 @@ import { handleAgentError } from "./core/worker.js";
 import { startOrchestrator } from "./core/orchestrator.js";
 import {
   findTaskForPullRequest,
+  getAllTasks,
   getTaskByBranchName,
   updateTask,
 } from "./db/db.js";
@@ -33,6 +34,10 @@ app.use(
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, openTasks: countOpenPRs() });
+});
+
+app.get("/api/tasks", (_req, res) => {
+  res.json(getAllTasks());
 });
 
 app.post("/webhook/linear", (req: RequestWithRawBody, res) => {
@@ -213,5 +218,5 @@ app.post("/webhook/github", (req: RequestWithRawBody, res) => {
 startOrchestrator();
 
 app.listen(config.port, () => {
-  console.log(`Fulbranch listening on port ${config.port}`);
+  console.log(`Mainark listening on port ${config.port}`);
 });
