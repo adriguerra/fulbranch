@@ -21,7 +21,7 @@ function parseDatabaseUrl(url: string): string {
 function getDbPath(): string {
   const url = process.env.DATABASE_URL;
   if (!url) {
-    return path.join(process.cwd(), "fulbranch.db");
+    return path.join(process.cwd(), "mainark.db");
   }
   return parseDatabaseUrl(url);
 }
@@ -247,4 +247,11 @@ export function countOpenPRs(): number {
 
 export function markInProgress(taskId: string): void {
   updateTask(taskId, { status: "in_progress" });
+}
+
+export function getAllTasks(): Task[] {
+  const rows = db
+    .prepare("SELECT * FROM tasks ORDER BY datetime(updated_at) DESC")
+    .all() as Record<string, unknown>[];
+  return rows.map(rowToTask);
 }

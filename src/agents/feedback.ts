@@ -1,14 +1,14 @@
 /**
- * Combine Fulbranch-persisted review text with fresh GitHub PR discussion for the implementer LLM.
+ * Combine Mainark-persisted review text with fresh GitHub PR discussion for the implementer LLM.
  */
 export function mergeReviewFeedbackForImplementer(
-  fulbranchFeedback: string | null,
+  mainarkFeedback: string | null,
   githubAggregated: string
 ): string | null {
   const parts: string[] = [];
-  if (fulbranchFeedback?.trim()) {
+  if (mainarkFeedback?.trim()) {
     parts.push(
-      `Fulbranch automated review (last stored):\n${fulbranchFeedback.trim()}`
+      `Mainark automated review (last stored):\n${mainarkFeedback.trim()}`
     );
   }
   if (githubAggregated.trim()) {

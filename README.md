@@ -1,6 +1,6 @@
-# Fulbranch
+# Mainark
 
-AI-powered development orchestrator: ingest Linear issues, queue work, implement changes via the **GitHub REST API** (no local clone), open draft pull requests, and run LLM review loops with a configurable cap on concurrent work. On **push**, Fulbranch can run an automated Claude review on the PR; on **submitted PR reviews** or **new PR thread comments**, it can pull human/bot feedback from GitHub and re-run the implementer against that thread so fixes are driven from real review discussion (for tasks stored in Fulbranch’s DB).
+AI-powered development orchestrator: ingest Linear issues, queue work, implement changes via the **GitHub REST API** (no local clone), open draft pull requests, and run LLM review loops with a configurable cap on concurrent work. On **push**, Mainark can run an automated Claude review on the PR; on **submitted PR reviews** or **new PR thread comments**, it can pull human/bot feedback from GitHub and re-run the implementer against that thread so fixes are driven from real review discussion (for tasks stored in Mainark's DB).
 
 ## License
 
@@ -54,7 +54,7 @@ Configure a **repository webhook** on the target repo: content type JSON, payloa
 
 ## Database
 
-The app uses **SQLite** by default. If `DATABASE_URL` is unset, the database file is created at `./fulbranch.db` in the current working directory.
+The app uses **SQLite** by default. If `DATABASE_URL` is unset, the database file is created at `./mainark.db` in the current working directory.
 
 - The schema lives in [`src/db/schema.sql`](src/db/schema.sql); tables are created on startup. Existing databases get new columns via lightweight **migrations** on startup (`latest_review_json`, `review_issue_hashes`, `repeat_count`).
 - **Do not commit** `.env`, `*.db`, or `*.db-journal` files. They are listed in `.gitignore` and may contain secrets or private issue data.

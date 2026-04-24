@@ -1,5 +1,5 @@
 {
-  "name": "fulbranch",
+  "name": "mainark",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,8 +9,11 @@
     "dev": "tsx watch src/index.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.71",
+    "@ai-sdk/openai": "^3.0.53",
     "@anthropic-ai/sdk": "^0.39.0",
     "@octokit/rest": "^21.1.1",
+    "ai": "^6.0.168",
     "better-sqlite3": "^11.9.1",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
