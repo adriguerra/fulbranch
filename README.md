@@ -2,10 +2,6 @@
 
 AI-powered development orchestrator: ingest Linear issues, queue work, implement changes via the **GitHub REST API** (no local clone), open draft pull requests, and run LLM review loops with a configurable cap on concurrent work. On **push**, Mainark can run an automated Claude review on the PR; on **submitted PR reviews** or **new PR thread comments**, it can pull human/bot feedback from GitHub and re-run the implementer against that thread so fixes are driven from real review discussion (for tasks stored in Mainark's DB).
 
-## License
-
-This project is open source under the [MIT License](LICENSE).
-
 ## Requirements
 
 - Node.js 20+ (recommended)
