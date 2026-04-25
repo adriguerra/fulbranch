@@ -135,6 +135,8 @@ export async function runReviewer(task: Task): Promise<void> {
         latest_review_json: latestJson,
         review_issue_hashes: serializeIssueHashList([]),
         repeat_count: 0,
+        blocked_reason: null,
+        failure_reason: null,
         review_feedback: null,
       });
       taskLog(task.id, "review → done (PR ready for review)");
@@ -160,6 +162,7 @@ export async function runReviewer(task: Task): Promise<void> {
       );
       updateTask(task.id, {
         status: "blocked",
+        blocked_reason: "repeat_detection",
         latest_review_json: latestJson,
         review_issue_hashes: serializeIssueHashList(currFingerprints),
         repeat_count: nextRepeat,
@@ -176,6 +179,7 @@ export async function runReviewer(task: Task): Promise<void> {
       );
       updateTask(task.id, {
         status: "blocked",
+        blocked_reason: "max_review_retries",
         latest_review_json: latestJson,
         review_issue_hashes: serializeIssueHashList(currFingerprints),
         repeat_count: nextRepeat,
@@ -188,6 +192,7 @@ export async function runReviewer(task: Task): Promise<void> {
     const nextRetries = task.retries + 1;
     updateTask(task.id, {
       status: "fixing",
+      blocked_reason: null,
       retries: nextRetries,
       review_feedback: feedbackLines,
       latest_review_json: latestJson,

@@ -1,10 +1,16 @@
 export type TaskStatus =
   | "pending"
+  | "running"
   | "in_progress"
   | "fixing"
   | "review"
   | "done"
+  | "failed"
+  | "skipped"
   | "blocked";
+
+export type TaskScope = "file" | "function" | "test" | "module";
+export type MergeStrategy = "sequential" | "parallel-safe";
 
 export type ReviewIssueType = "bug" | "style" | "robustness" | "test_gap";
 export type ReviewSeverity = "low" | "medium" | "high";
@@ -29,6 +35,19 @@ export interface Task {
   title: string;
   description: string;
   status: TaskStatus;
+  run_id: string | null;
+  logical_key: string | null;
+  spec_hash: string | null;
+  task_ref: string | null;
+  depends_on: string[];
+  owned_files: string[];
+  scope: TaskScope;
+  target: string | null;
+  allow_parallel: boolean;
+  blocked_reason: string | null;
+  failure_reason: string | null;
+  merge_strategy: MergeStrategy | null;
+  merge_order: number | null;
   branch_name: string | null;
   pr_url: string | null;
   pr_number: number | null;
@@ -41,8 +60,18 @@ export interface Task {
   review_issue_hashes: string | null;
   /** Increments when current issues overlap previous fingerprints; reset when no overlap */
   repeat_count: number;
+  /** Structured implementer output (files_modified/tests_added/summary/notes) */
+  agent_output_json: string | null;
   created_at: Date;
   updated_at: Date;
+}
+
+export interface TaskEvent {
+  id: number;
+  task_id: string;
+  run_id: string | null;
+  message: string;
+  created_at: Date;
 }
 
 export interface FileContent {
@@ -55,9 +84,44 @@ export interface FileChange {
   content: string;
 }
 
+export interface ImplementerOutput {
+  files: FileChange[];
+  files_modified: string[];
+  summary: string;
+  tests_added: string[];
+  notes: string;
+}
+
 /** Normalized output from reviewer LLM after parsing legacy + structured formats */
 export interface ReviewResult {
   verdict: "pass" | "needs_work";
   summary: string;
   structuredIssues: StructuredReviewIssue[];
+}
+
+export interface SpecTaskInput {
+  id: string;
+  prompt: string;
+  depends_on: string[];
+  owned_files: string[];
+  scope: TaskScope;
+  target: string | null;
+  allow_parallel: boolean;
+}
+
+export interface SpecRunConfig {
+  max_parallel_tasks: number;
+  max_retries: number;
+}
+
+export interface SpecMergeConfig {
+  strategy: MergeStrategy;
+  order: string[];
+}
+
+export interface SpecDefinition {
+  version: 1;
+  config: SpecRunConfig;
+  merge: SpecMergeConfig;
+  tasks: SpecTaskInput[];
 }

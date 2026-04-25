@@ -2,7 +2,7 @@ import * as github from "../services/github.js";
 import { mergeReviewFeedbackForImplementer } from "./feedback.js";
 import { generateImplementation } from "../services/llm.js";
 import { getTaskById, updateTask } from "../db/db.js";
-import type { Task } from "../types.js";
+import type { FileChange, ImplementerOutput, Task } from "../types.js";
 import { parseLatestReviewJson } from "../review/structured.js";
 import { config } from "../config.js";
 import { taskLog } from "../logger.js";
@@ -20,8 +20,30 @@ function slugify(title: string): string {
 
 function branchNameForNewTask(task: Task): string {
   const slug = slugify(task.title) || "task";
-  const raw = `ful-${task.id}-${slug}`;
+  const taskRef = (task.task_ref ?? task.id).replace(/[^a-zA-Z0-9._-]/g, "-");
+  const raw = `ful-${taskRef}-${slug}`;
   return raw.length > 200 ? raw.slice(0, 200) : raw;
+}
+
+function normalize(path: string): string {
+  return path.trim().replaceAll("\\", "/").replaceAll(/\/+/g, "/");
+}
+
+function validateOwnedFileChanges(task: Task, output: ImplementerOutput): FileChange[] {
+  const owned = new Set(task.owned_files.map(normalize));
+  const violations: string[] = [];
+  for (const file of output.files) {
+    const n = normalize(file.path);
+    if (owned.size > 0 && !owned.has(n)) {
+      violations.push(file.path);
+    }
+  }
+  if (violations.length > 0) {
+    throw new Error(
+      `implementer modified non-owned files: ${violations.join(", ")}`
+    );
+  }
+  return output.files;
 }
 
 export async function runImplementer(task: Task): Promise<void> {
@@ -77,13 +99,13 @@ async function runImplementerLocked(task: Task): Promise<void> {
   const structuredActive =
     stored?.status === "needs_work" && stored.issues.length > 0;
 
-  let changes;
+  let output: ImplementerOutput;
   if (structuredActive) {
     taskLog(
       base.id,
       "implementer: structured review issues (primary); GitHub thread supplementary"
     );
-    changes = await generateImplementation(
+    output = await generateImplementation(
       { ...base, branch_name: branch },
       fileContents,
       githubDiscussion.trim()
@@ -95,7 +117,7 @@ async function runImplementerLocked(task: Task): Promise<void> {
       base.review_feedback,
       githubDiscussion
     );
-    changes = await generateImplementation(
+    output = await generateImplementation(
       {
         ...base,
         branch_name: branch,
@@ -105,15 +127,17 @@ async function runImplementerLocked(task: Task): Promise<void> {
     );
   }
 
-  const message = `feat: ${base.title} [ful-${base.id}]`;
+  const changes = validateOwnedFileChanges(base, output);
+  const message = `feat: ${base.title} [${base.task_ref ?? base.id}]`;
   await github.applyFileChanges(branch, changes, message);
 
   let prUrl = base.pr_url;
   let prNumber = base.pr_number;
 
   if (base.pr_number == null) {
-    const title = `${base.title} [ful-${base.id}]`;
-    const body = `Automated PR for Linear issue \`${base.id}\`.\n\n${base.description || ""}`;
+    const ref = base.task_ref ?? base.id;
+    const title = `${base.title} [${ref}]`;
+    const body = `Automated PR for task \`${base.id}\`.\n\n${base.description || ""}\n\nTask-Ref: ${ref}`;
     taskLog(base.id, "opening draft PR");
     const pr = await github.createDraftPR(branch, title, body);
     prUrl = pr.url;
@@ -128,6 +152,15 @@ async function runImplementerLocked(task: Task): Promise<void> {
     branch_name: branch,
     pr_url: prUrl,
     pr_number: prNumber,
+    task_ref: base.task_ref ?? base.id,
+    blocked_reason: null,
+    failure_reason: null,
+    agent_output_json: JSON.stringify({
+      files_modified: output.files_modified,
+      summary: output.summary,
+      tests_added: output.tests_added,
+      notes: output.notes,
+    }),
     review_feedback: null,
   });
   taskLog(base.id, "implementer → review");

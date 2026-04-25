@@ -3,6 +3,7 @@ import express from "express";
 import type { Request } from "express";
 import { runImplementer } from "./agents/implementer.js";
 import { runReviewer } from "./agents/reviewer.js";
+import { cliLogs, cliPlanSpec, cliRunSpec, cliStatus } from "./cli/run-spec.js";
 import { config } from "./config.js";
 import { handleAgentError } from "./core/worker.js";
 import { startOrchestrator } from "./core/orchestrator.js";
@@ -69,12 +70,29 @@ app.post("/webhook/linear", (req: RequestWithRawBody, res) => {
 
 function taskEligibleForImplementer(
   status: string
-): status is "in_progress" | "fixing" | "review" {
+): status is "running" | "in_progress" | "fixing" | "review" {
   return (
+    status === "running" ||
     status === "in_progress" ||
     status === "fixing" ||
     status === "review"
   );
+}
+
+function extractTaskRefFromPullRequest(
+  pr: Record<string, unknown> | undefined
+): string | null {
+  if (!pr) {
+    return null;
+  }
+  const body = typeof pr.body === "string" ? pr.body : "";
+  const title = typeof pr.title === "string" ? pr.title : "";
+  const matchBody = body.match(/Task-Ref:\s*([^\s]+)/i);
+  if (matchBody?.[1]) {
+    return matchBody[1];
+  }
+  const matchTitle = title.match(/\[([^\]]+)\]\s*$/);
+  return matchTitle?.[1] ?? null;
 }
 
 app.post("/webhook/github", (req: RequestWithRawBody, res) => {
@@ -157,7 +175,8 @@ app.post("/webhook/github", (req: RequestWithRawBody, res) => {
       return;
     }
 
-    const task = findTaskForPullRequest(prNum, headRef);
+    const taskRef = extractTaskRefFromPullRequest(pr);
+    const task = findTaskForPullRequest(prNum, headRef, taskRef);
     if (!task || !taskEligibleForImplementer(task.status)) {
       res.status(200).json({ ok: true, ignored: true });
       return;
@@ -196,7 +215,7 @@ app.post("/webhook/github", (req: RequestWithRawBody, res) => {
       return;
     }
 
-    const task = findTaskForPullRequest(num, null);
+    const task = findTaskForPullRequest(num, null, null);
     if (!task || !taskEligibleForImplementer(task.status)) {
       res.status(200).json({ ok: true, ignored: true });
       return;
@@ -215,8 +234,19 @@ app.post("/webhook/github", (req: RequestWithRawBody, res) => {
   res.status(200).json({ ok: true, ignored: true });
 });
 
-startOrchestrator();
-
-app.listen(config.port, () => {
-  console.log(`Mainark listening on port ${config.port}`);
-});
+const [command, arg1, arg2] = process.argv.slice(2);
+if (command === "run" && arg1) {
+  const mode = arg2 === "--new-run" ? "new-run" : "resume";
+  cliRunSpec(arg1, mode);
+} else if (command === "plan" && arg1) {
+  cliPlanSpec(arg1);
+} else if (command === "status" && arg1) {
+  cliStatus(arg1);
+} else if (command === "logs" && arg1) {
+  cliLogs(arg1);
+} else {
+  startOrchestrator();
+  app.listen(config.port, () => {
+    console.log(`Mainark listening on port ${config.port}`);
+  });
+}

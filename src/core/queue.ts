@@ -1,6 +1,7 @@
 export {
+  getAllTasks,
   countOpenPRs,
-  getNextPendingTask,
+  getReadyPendingTasks,
   getTasksAwaitingRetryImplementation,
   getTasksInReview,
   markInProgress,

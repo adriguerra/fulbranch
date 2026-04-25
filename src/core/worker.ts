@@ -5,6 +5,6 @@ import { taskLog } from "../logger.js";
 export function handleAgentError(task: Task, err: unknown): void {
   const msg = err instanceof Error ? err.message : String(err);
   taskLog(task.id, `error: ${msg}`);
-  updateTask(task.id, { status: "blocked" });
-  taskLog(task.id, "→ blocked (unrecoverable error)");
+  updateTask(task.id, { status: "failed", failure_reason: msg });
+  taskLog(task.id, "→ failed (unrecoverable error)");
 }

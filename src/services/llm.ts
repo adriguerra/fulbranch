@@ -3,8 +3,8 @@ import { openai } from "@ai-sdk/openai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 import type {
-  FileChange,
   FileContent,
+  ImplementerOutput,
   ReviewResult,
   StructuredReviewIssue,
   Task,
@@ -34,6 +34,10 @@ const implementationSchema = z.object({
       content: z.string(),
     })
   ),
+  files_modified: z.array(z.string()).default([]),
+  summary: z.string().default(""),
+  tests_added: z.array(z.string()).default([]),
+  notes: z.string().default(""),
 });
 
 const reviewSchema = z.object({
@@ -70,7 +74,7 @@ export async function generateImplementation(
   task: Task,
   fileContents: FileContent[],
   options?: ImplementationOptions
-): Promise<FileChange[]> {
+): Promise<ImplementerOutput> {
   const context = fileContents
     .map((f) => `--- ${f.path} ---\n${f.content}`)
     .join("\n\n");
@@ -133,7 +137,16 @@ Implement the task. Output files array with all files to create or replace.`;
     schema: implementationSchema,
   });
 
-  return object.files;
+  return {
+    files: object.files,
+    files_modified:
+      object.files_modified.length > 0
+        ? object.files_modified
+        : object.files.map((f) => f.path),
+    summary: object.summary,
+    tests_added: object.tests_added,
+    notes: object.notes,
+  };
 }
 
 async function generateStructuredFixImplementation(
@@ -142,7 +155,7 @@ async function generateStructuredFixImplementation(
   issues: StructuredReviewIssue[],
   summary: string,
   githubSupplement?: string
-): Promise<FileChange[]> {
+): Promise<ImplementerOutput> {
   const issueList = formatStructuredIssuesForFixPrompt(issues);
   const supplementBlock = githubSupplement?.trim()
     ? `\n\nSupplementary context (lower priority — GitHub PR thread):\n${githubSupplement.trim().slice(0, 12_000)}\n`
@@ -175,7 +188,16 @@ Output files array with one entry per modified file.`;
     schema: implementationSchema,
   });
 
-  return object.files;
+  return {
+    files: object.files,
+    files_modified:
+      object.files_modified.length > 0
+        ? object.files_modified
+        : object.files.map((f) => f.path),
+    summary: object.summary,
+    tests_added: object.tests_added,
+    notes: object.notes,
+  };
 }
 
 export async function reviewCode(diff: string): Promise<ReviewResult> {
