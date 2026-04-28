@@ -1,0 +1,39 @@
+services:
+  orchestrator:
+    build: .
+    container_name: ai-dev-orchestrator
+    restart: unless-stopped
+    volumes:
+      - ./data:/data            # SQLite persistence
+      - ./repo:/repo            # cloned target codebase (REPO_PATH)
+      - ./worktrees:/worktrees  # per-issue git worktrees
+    environment:
+      - GITHUB_PAT=${GITHUB_PAT}
+      - GH_TOKEN=${GITHUB_PAT}
+      - REPO_URL=${REPO_URL}
+      - REPO_PATH=${REPO_PATH:-/repo}
+      - GITHUB_WEBHOOK_SECRET=${GITHUB_WEBHOOK_SECRET}
+      - GIT_DEFAULT_BRANCH=${GIT_DEFAULT_BRANCH:-main}
+      - LINEAR_API_KEY=${LINEAR_API_KEY}
+      - LINEAR_WEBHOOK_SECRET=${LINEAR_WEBHOOK_SECRET}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - MAX_PARALLEL_AGENTS=${MAX_PARALLEL_AGENTS:-4}
+      - MAX_REVIEW_CYCLES=${MAX_REVIEW_CYCLES:-3}
+      - RECONCILE_INTERVAL_MS=${RECONCILE_INTERVAL_MS:-300000}
+      - PORT=${PORT:-3000}
+      - LOG_FORMAT=${LOG_FORMAT:-pretty}
+    expose:
+      - "3000"
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: ai-dev-orchestrator-tunnel
+    restart: unless-stopped
+    command: http --url=${NGROK_DOMAIN} orchestrator:3000
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+      - NGROK_DOMAIN=${NGROK_DOMAIN}
+    depends_on:
+      - orchestrator

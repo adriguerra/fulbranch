@@ -1,10 +1,17 @@
 node_modules/
-dist/
 .env
 .env.local
-web/.env.local
-*.db
-*.db-journal
+.env.*.local
+
+# Runtime directories — created by `bun run setup` before first start
+data/
+repo/
+worktrees/
+
+# Build + logs
+dist/
+*.log
 .DS_Store
-web/.next/
-web/tsconfig.tsbuildinfo
+
+# Bun
+bun.lockb
